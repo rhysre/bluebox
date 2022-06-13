@@ -3,6 +3,7 @@ package main
 var initTemplate string = `package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"io"
@@ -22,15 +23,14 @@ var exeArg [][]string = [][]string {
 {{- end}}{{end -}}
 }
 
-func printClose(r io.ReadCloser, prefix string){
+func drainPipe(r io.ReadCloser, prefix string){
 	defer r.Close()
-	slurp, _ := io.ReadAll(r)
-	if len(slurp) == 0 {
-		return
-	}
-	fmt.Printf("[            ] %s\n%s", prefix, slurp)
-}
 
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		fmt.Printf("[            ] %s: %s\n", prefix, scanner.Text())
+	}
+}
 
 func main() {
 	// Safe guard to make sure this dynamically created executable does not harm the system
@@ -58,26 +58,27 @@ func main() {
 			fmt.Printf("[            ]\tFailed to redirect stdout for '%s': %v\n", exe, err)
 			continue
 		}
+
+		go drainPipe(stdout, "stdout")
+		go drainPipe(stderr, "stderr")
+
 		if err := cmd.Start(); err != nil {
 			fmt.Printf("[            ]\tFailure starting %s: %v\n", exe, err)
-			printClose(stderr, "stderr")
 			stdout.Close()
 			continue
 		}
+
 		for {
 			var s syscall.WaitStatus
 			var r syscall.Rusage
 			if p, err := syscall.Wait4(-1, &s, 0, &r); p == cmd.Process.Pid {
 				fmt.Printf("[            ]\t%s exited, exit status %d\n", cmd.Path, s.ExitStatus())
-				printClose(stderr, "stderr")
 				break
 			} else if p != -1 {
 				fmt.Printf("[            ]\tReaped PID %d, exit status %d\n", p, s.ExitStatus())
-				printClose(stderr, "stderr")
 				break
 			} else {
 				fmt.Printf("[            ]\tError from Wait4 for orphaned child: %v\n", err)
-				printClose(stderr, "stderr")
 				break
 			}
 		}
@@ -85,7 +86,6 @@ func main() {
 		if err := cmd.Process.Release(); err != nil {
 			fmt.Printf("[            ]\tError releasing process %v: %v\n", cmd, err)
 		}
-		printClose(stdout, "stdout")
 	}
 
 	// Shut VM down
