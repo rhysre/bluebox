@@ -30,6 +30,10 @@ func drainPipe(r io.ReadCloser, prefix string){
 	for scanner.Scan() {
 		fmt.Printf("[            ] %s: %s\n", prefix, scanner.Text())
 	}
+
+	if err := scanner.Err(); err != nil {
+	    fmt.Printf("[            ]\tFailure scanning %s: %v\n", prefix, err)
+	}
 }
 
 func main() {
