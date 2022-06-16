@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"syscall"
+	"sync"
 )
 
 var execs []string= []string{
@@ -23,8 +24,9 @@ var exeArg [][]string = [][]string {
 {{- end}}{{end -}}
 }
 
-func drainPipe(r io.ReadCloser, prefix string){
+func drainPipe(r io.ReadCloser, prefix string, wg *sync.WaitGroup){
 	defer r.Close()
+	defer wg.Done()
 
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
@@ -63,8 +65,10 @@ func main() {
 			continue
 		}
 
-		go drainPipe(stdout, "stdout")
-		go drainPipe(stderr, "stderr")
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go drainPipe(stdout, "stdout", &wg)
+		go drainPipe(stderr, "stderr", &wg)
 
 		if err := cmd.Start(); err != nil {
 			fmt.Printf("[            ]\tFailure starting %s: %v\n", exe, err)
@@ -86,6 +90,8 @@ func main() {
 				break
 			}
 		}
+
+		wg.Wait()
 
 		if err := cmd.Process.Release(); err != nil {
 			fmt.Printf("[            ]\tError releasing process %v: %v\n", cmd, err)
